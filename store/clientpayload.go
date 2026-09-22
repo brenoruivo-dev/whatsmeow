@@ -76,7 +76,7 @@ func (vc WAVersionContainer) ProtoAppVersion() *waWa6.ClientPayload_UserAgent_Ap
 }
 
 // waVersion is the WhatsApp web client version
-var waVersion = WAVersionContainer{2, 3000, 1035920091}
+var waVersion = WAVersionContainer{2, 3000, 1047404058}
 
 // waVersionHash is the md5 hash of a dot-separated waVersion
 var waVersionHash [16]byte
@@ -100,6 +100,9 @@ func SetWAVersion(version WAVersionContainer) {
 	}
 	waVersion = version
 	waVersionHash = version.Hash()
+	if BaseClientPayload != nil && BaseClientPayload.UserAgent != nil {
+		BaseClientPayload.UserAgent.AppVersion = version.ProtoAppVersion()
+	}
 }
 
 var BaseClientPayload = &waWa6.ClientPayload{
