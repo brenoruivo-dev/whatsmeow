@@ -547,12 +547,34 @@ func (cli *Client) SendAppState(ctx context.Context, patch appstate.PatchInfo) e
 }
 
 func (cli *Client) sendAppState(ctx context.Context, patch appstate.PatchInfo, allowRetry bool) error {
+	retries := 0
+	if allowRetry {
+		retries = 20
+	}
+	return cli.sendAppStateWithRetries(ctx, patch, retries)
+}
+
+func (cli *Client) sendAppStateWithRetries(ctx context.Context, patch appstate.PatchInfo, retriesLeft int) error {
 	if cli == nil {
 		return ErrClientIsNil
 	}
 	version, hash, err := cli.Store.AppState.GetAppStateVersion(ctx, string(patch.Type))
 	if err != nil {
 		return err
+	}
+	if version == 0 {
+		cli.Log.Infof("App state %s version is 0, performing initial full sync before sending mutation", patch.Type)
+		eventsToDispatch, syncErr := cli.fetchAppState(ctx, patch.Type, true, false)
+		if syncErr != nil {
+			cli.Log.Warnf("Initial full sync of %s failed: %v, proceeding with version 0", patch.Type, syncErr)
+		} else {
+			go func() {
+				for _, evt := range eventsToDispatch {
+					cli.dispatchEvent(evt)
+				}
+			}()
+			version, hash, _ = cli.Store.AppState.GetAppStateVersion(ctx, string(patch.Type))
+		}
 	}
 	// TODO create new key instead of reusing the primary client's keys
 	latestKeyID, err := cli.Store.AppStateKeys.GetLatestAppStateSyncKeyID(ctx)
@@ -605,14 +627,24 @@ func (cli *Client) sendAppState(ctx context.Context, patch appstate.PatchInfo, a
 		if ok {
 			mainErr = fmt.Errorf("%w (%s): %s", ErrAppStateUpdate, patch.Type, &errorTag)
 		}
-		if ok && errorTag.AttrGetter().Int("code") == 409 && allowRetry {
-			zerolog.Ctx(ctx).Warn().Err(mainErr).Msg("Failed to update app state, trying to apply conflicts and retry")
+		if ok && errorTag.AttrGetter().Int("code") == 409 && retriesLeft > 0 {
+			zerolog.Ctx(ctx).Warn().Err(mainErr).Msgf("Failed to update app state (conflict 409), applying patches and retrying (retries left: %d)", retriesLeft)
 			var eventsToDispatch []any
 			patches, err := appstate.ParsePatchList(ctx, &respCollection, cli.downloadExternalAppStateBlob)
 			if err != nil {
 				return fmt.Errorf("%w (also, parsing patches in the response failed: %w)", mainErr, err)
 			} else if _, err = cli.applyAppStatePatches(ctx, patch.Type, state, patches, false, &eventsToDispatch); err != nil {
-				return fmt.Errorf("%w (also, applying patches in the response failed: %w)", mainErr, err)
+				zerolog.Ctx(ctx).Warn().Err(err).Msg("Failed to apply conflict patches, performing full resync of app state")
+				eventsToDispatch, syncErr := cli.fetchAppState(ctx, patch.Type, true, false)
+				if syncErr != nil {
+					return fmt.Errorf("%w (also, applying patches failed: %v, and full resync failed: %w)", mainErr, err, syncErr)
+				}
+				go func() {
+					for _, evt := range eventsToDispatch {
+						cli.dispatchEvent(evt)
+					}
+				}()
+				return cli.sendAppStateWithRetries(ctx, patch, retriesLeft-1)
 			} else {
 				zerolog.Ctx(ctx).Debug().Msg("Retrying app state send after applying conflicting patches")
 				go func() {
@@ -620,7 +652,7 @@ func (cli *Client) sendAppState(ctx context.Context, patch appstate.PatchInfo, a
 						cli.dispatchEvent(evt)
 					}
 				}()
-				return cli.sendAppState(ctx, patch, false)
+				return cli.sendAppStateWithRetries(ctx, patch, retriesLeft-1)
 			}
 		}
 		return mainErr

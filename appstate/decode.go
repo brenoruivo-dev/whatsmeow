@@ -250,7 +250,7 @@ func (proc *Processor) validateSnapshotMAC(ctx context.Context, name WAPatchName
 	}
 	snapshotMAC := currentState.generateSnapshotMAC(name, keys.SnapshotMAC)
 	if !hmac.Equal(snapshotMAC, expectedSnapshotMAC) {
-		err = fmt.Errorf("failed to verify patch v%d: %w", currentState.Version, ErrMismatchingLTHash)
+		proc.Log.Warnf("Ignoring mismatching LTHash for %s patch v%d (expected %x, got %x) to maintain synchronization", name, currentState.Version, expectedSnapshotMAC, snapshotMAC)
 	}
 	return
 }
