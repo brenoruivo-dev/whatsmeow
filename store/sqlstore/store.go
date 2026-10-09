@@ -531,7 +531,8 @@ func (s *SQLStore) putAppStateMutationMACs(ctx context.Context, name string, ver
 		values[baseIndex+1] = mutation.ValueMAC
 		queryParts[i] = fmt.Sprintf(placeholderSyntax, baseIndex+1, baseIndex+2)
 	}
-	_, err := s.db.Exec(ctx, putAppStateMutationMACsQuery+strings.Join(queryParts, ","), values...)
+	query := putAppStateMutationMACsQuery + strings.Join(queryParts, ",") + " ON CONFLICT (jid, name, version, index_mac) DO NOTHING"
+	_, err := s.db.Exec(ctx, query, values...)
 	return err
 }
 
