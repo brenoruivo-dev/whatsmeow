@@ -260,6 +260,31 @@ func BuildStar(target, sender types.JID, messageID types.MessageID, fromMe, star
 	}
 }
 
+func newContactMutation(target types.JID, firstName, fullName string, saveOnPrimaryAddressbook bool) MutationInfo {
+	return MutationInfo{
+		Index:   []string{IndexContact, target.String()},
+		Version: 2,
+		Value: &waSyncAction.SyncActionValue{
+			ContactAction: &waSyncAction.ContactAction{
+				FirstName:                &firstName,
+				FullName:                 &fullName,
+				PnJID:                    proto.String(target.String()),
+				SaveOnPrimaryAddressbook: &saveOnPrimaryAddressbook,
+			},
+		},
+	}
+}
+
+// BuildContact builds an app state patch for adding or editing a contact and optionally saving to the primary phone\'s address book.
+func BuildContact(target types.JID, firstName, fullName string, saveOnPrimaryAddressbook bool) PatchInfo {
+	return PatchInfo{
+		Type: WAPatchCriticalUnblockLow,
+		Mutations: []MutationInfo{
+			newContactMutation(target, firstName, fullName, saveOnPrimaryAddressbook),
+		},
+	}
+}
+
 func (proc *Processor) EncodePatch(ctx context.Context, keyID []byte, state HashState, patchInfo PatchInfo) ([]byte, error) {
 	keys, err := proc.getAppStateKey(ctx, keyID)
 	if err != nil {
