@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -260,27 +261,36 @@ func BuildStar(target, sender types.JID, messageID types.MessageID, fromMe, star
 	}
 }
 
-func newContactMutation(target types.JID, firstName, fullName string, saveOnPrimaryAddressbook bool) MutationInfo {
+func newContactMutation(target types.JID, firstName, fullName string, saveOnPrimaryAddressbook bool, lidJID *string) MutationInfo {
+	canonicalTarget := target.ToNonAD()
+	canonicalTarget.User = strings.TrimPrefix(canonicalTarget.User, "+")
+	targetStr := canonicalTarget.String()
+
 	return MutationInfo{
-		Index:   []string{IndexContact, target.String()},
+		Index:   []string{IndexContact, targetStr},
 		Version: 2,
 		Value: &waSyncAction.SyncActionValue{
 			ContactAction: &waSyncAction.ContactAction{
 				FirstName:                &firstName,
 				FullName:                 &fullName,
-				PnJID:                    proto.String(target.String()),
+				PnJID:                    proto.String(targetStr),
+				LidJID:                   lidJID,
 				SaveOnPrimaryAddressbook: &saveOnPrimaryAddressbook,
 			},
 		},
 	}
 }
 
-// BuildContact builds an app state patch for adding or editing a contact and optionally saving to the primary phone\'s address book.
-func BuildContact(target types.JID, firstName, fullName string, saveOnPrimaryAddressbook bool) PatchInfo {
+// BuildContact builds an app state patch for adding or editing a contact and optionally saving to the primary phone's address book.
+func BuildContact(target types.JID, firstName, fullName string, saveOnPrimaryAddressbook bool, lidJID ...*string) PatchInfo {
+	var lid *string
+	if len(lidJID) > 0 {
+		lid = lidJID[0]
+	}
 	return PatchInfo{
 		Type: WAPatchCriticalUnblockLow,
 		Mutations: []MutationInfo{
-			newContactMutation(target, firstName, fullName, saveOnPrimaryAddressbook),
+			newContactMutation(target, firstName, fullName, saveOnPrimaryAddressbook, lid),
 		},
 	}
 }
