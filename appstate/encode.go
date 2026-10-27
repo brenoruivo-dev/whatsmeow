@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -186,14 +187,24 @@ func BuildLabelMessage(target types.JID, labelID, messageID string, labeled bool
 }
 
 func newLabelEditMutation(labelID string, labelName string, labelColor int32, deleted bool) MutationInfo {
+	isActive := !deleted
+	listType := waSyncAction.LabelEditAction_CUSTOM
+	var orderIdx int32
+	if idx, err := strconv.Atoi(labelID); err == nil {
+		orderIdx = int32(idx)
+	}
+
 	return MutationInfo{
 		Index:   []string{IndexLabelEdit, labelID},
 		Version: 3,
 		Value: &waSyncAction.SyncActionValue{
 			LabelEditAction: &waSyncAction.LabelEditAction{
-				Name:    &labelName,
-				Color:   &labelColor,
-				Deleted: &deleted,
+				Name:       &labelName,
+				Color:      &labelColor,
+				Deleted:    &deleted,
+				IsActive:   &isActive,
+				Type:       &listType,
+				OrderIndex: &orderIdx,
 			},
 		},
 	}
